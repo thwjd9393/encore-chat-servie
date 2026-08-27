@@ -52,6 +52,7 @@ class ConversationOut(BaseModel):
 class MessageCreate(BaseModel):
     role: Literal["user", "assistant", "system"] ## - 시스템 롤 추가
     content: str = Field(min_length=1)
+    
 # TODO 7. MessageOut    — id, conversation_id, role, content, created_at
 class MessageOut(BaseModel):
     id: UUID
