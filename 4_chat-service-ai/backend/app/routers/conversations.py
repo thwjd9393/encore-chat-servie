@@ -98,6 +98,7 @@ def create_message(conversation_id: UUID, payload: MessageCreate):
     )
 
     #캐시에 반영 > 무효화
+    # r.delete(_messages_cache_key(conversation_id))   # 이 줄을 추가
     cache_delete(_messages_cache_key(conversation_id))
 
     #메세지 목록 반환
@@ -112,6 +113,7 @@ def list_messages(conversation_id: UUID):
     #메세지 캐시
     cache_key = _messages_cache_key(conversation_id)
     #캐시에서 get
+    # cached = r.get(cache_key)
     cached = cache_get(cache_key)
 
     #hit
@@ -141,6 +143,7 @@ def list_messages(conversation_id: UUID):
     )
 
     #캐시 등록
+    # r.set(cache_key, json.dumps(result.data, default=str), ex=MESSAGES_CACHE_TTL_SECONDS)
     cache_set(cache_key, json.dumps(result.data, default=str), MESSAGES_CACHE_TTL_SECONDS)
 
     return result.data
