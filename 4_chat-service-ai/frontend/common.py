@@ -44,6 +44,19 @@ def api(method: str, path: str, **kwargs):
     if response.status_code >= 400:
         raise ApiError(f"요청이 실패했습니다 (상태 코드 {response.status_code}).")
 
+    if response.status_code == 503:
+        # 모델 호출이 실패한 경우다. 백엔드가 detail 에 원인을 담아서 보낸다.
+        # 17일차에 가장 흔한 원인은 하루 요청 한도 초과(429)다.
+        # 상태 코드만 보여주면 "왜 갑자기 안 되지" 로 끝나고 스스로 못 고친다.
+        detail = response.json().get("detail", "")
+        if "429" in detail or "RESOURCE_EXHAUSTED" in detail:
+            raise ApiError(
+                "오늘 쓸 수 있는 AI 요청 횟수를 다 썼습니다. "
+                "무료 등급은 모델마다 하루 요청 수가 정해져 있습니다. "
+                "내일 다시 시도하거나 강사에게 알리세요."
+            )
+        raise ApiError(f"답변을 만들지 못했습니다. {detail}")  
+
     return response.json() if response.content else None 
 
 

@@ -120,6 +120,27 @@ def ask(conversation_id: str, question: str) -> None:
         return
     st.rerun() #정상 처리 -> 화면 갱신
 
+
+#후속 액션 
+def render_follow_ups(last_answer: str) -> None:
+    """직전 답변을 두고 이어서 할 수 있는 행동.
+
+    주의: 오늘은 모델이 이전 대화를 기억하지 못한다(19일차 주제).
+    그래서 직전 답변을 질문 안에 넣어서 보낸다. 맥락은 결국 프롬프트로 들어간다.
+    """
+    st.caption("이어서")
+    actions = {
+        "더 자세히": f"방금 한 이 말을 예시를 들어 더 자세히 설명해 주세요.\n\n{last_answer}",
+        "간단하게": f"방금 한 이 말을 세 문장으로 줄여 주세요.\n\n{last_answer}",
+        "다음 질문": "다음 면접 질문을 하나 주세요.",
+    }
+    columns = st.columns(len(actions))
+    for column, (label, question) in zip(columns, actions.items()):
+        if column.button(label, use_container_width=True):
+            st.session_state.pending_question = question
+            st.rerun()
+
+
 ## 메세지 입력하는 애
 def render_conversation(conversation_id: str) -> None:
     """가운데: 주고받은 내용과 입력칸."""
@@ -145,6 +166,19 @@ def render_conversation(conversation_id: str) -> None:
         with st.chat_message(message["role"]):
             st.write(message["content"])
 
+    
+    #메세지 목록이 있고, 목록의 마지막 메세지의 role이 assistant일 때만 호출 가능!!
+    #제일 마지막에 있는 메세지 꺼내기
+    if messages and messages[-1]["role"] == "assistant":
+            render_follow_ups(messages[-1]["content"])
+
+
+
+    # 버튼을 눌러 세션에 담긴 질문이 있는지 확인 -> 있으면 답변 요청
+    if st.session_state.pending_question:
+        question = st.session_state.pending_question
+        st.session_state.pending_question = None #값 지우지 않음 무한루트 돈다
+        ask(conversation_id, question)
 
     ##############################################################
     ###########################################################3##
@@ -179,10 +213,11 @@ def render_examples(conversation_id: str) -> None:
     columns = st.columns(len(EXAMPLE_QUESTIONS))
     #zip : 두개의 값을 하나로 묶어주는 것
     for column, question in zip(columns, EXAMPLE_QUESTIONS):
+
+        #버튼을 클릭하면 질문을 세션 변수에 저장함
         if column.button(question, use_container_width=True):
             st.session_state.pending_question = question
             st.rerun()
-
 
 # 브라우저 화면에 드로임
 #화면 구성에 필요한 환경정보 엔드포인트 호출
