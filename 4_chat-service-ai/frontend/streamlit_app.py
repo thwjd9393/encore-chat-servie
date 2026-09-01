@@ -40,15 +40,33 @@ def render_sidebar() -> None:
                 "이전 면접 연습 기록이 없습니다",
                 options=ids,
                 format_func=lambda cid: labels[cid],
-                key="conversation_id",
+                key="conversation_select",
             )
             #세션에 선택한 메세지 아이디 넣어주기
             st.session_state.conversation_id = selected
         else:
             st.caption("아직 연습 기록이 없습니다.")
 
-            
+        st.divider() #선
 
+        job_title = st.text_input("직무", placeholder="예: 백엔드 개발자")
+        #잡타이틀이 있냐 없냐에 따라 true/false가 됨
+        if st.button("새 면접 시작", use_container_width=True) and job_title: 
+            try:
+                created = api(
+                    "POST",
+                    "/conversations",
+                    json={"user_id": st.session_state.user_id, "title": job_title},
+                )
+            except ApiError as error:
+                st.error(str(error))
+                return
+
+            #새로 생성한 대화 id를 세션에 저장
+            st.session_state.conversation_id = created["id"]
+            st.rerun()
+
+            
 
 def render_empty(message: str, hint: str) -> None:
     """빈 화면은 "없다"가 아니라 "다음에 무엇을 하면 되는지"를 말해야 한다."""
@@ -58,6 +76,8 @@ def render_empty(message: str, hint: str) -> None:
 
 def render_conversation(conversation_id: str) -> None:
     """가운데: 주고받은 내용과 입력칸."""
+
+    #메세지 내역 가져오기
     try:
         messages = api("GET", f"/conversations/{conversation_id}/messages")
     except ApiError as error:
@@ -70,12 +90,15 @@ def render_conversation(conversation_id: str) -> None:
             "아래 입력칸에 첫 답변을 적어보세요. 오늘은 저장만 되고, 면접관의 질문은 17일차에 붙입니다.",
         )
 
+    #메세지 목록 출력
     for message in messages:
         with st.chat_message(message["role"]):
             st.write(message["content"])
 
+    #새로운 메세지 입력 위젯 출력
     if answer := st.chat_input("답변을 입력하세요"):
         try:
+            #입력받은 메세지를 서버 엔드포인트에 전송
             api(
                 "POST",
                 f"/conversations/{conversation_id}/messages",
@@ -84,6 +107,8 @@ def render_conversation(conversation_id: str) -> None:
         except ApiError as error:
             st.error(str(error))
             return
+
+        #화면 다시 그리기
         st.rerun()
 
 
@@ -103,7 +128,7 @@ elif not st.session_state.conversation_id:
         "왼쪽에서 직무를 적고 `새 면접 시작` 을 누르면 됩니다.",
     )
 else:
-    st.write("(여기에 대화가 들어갑니다 — 실습 8)")
+    render_conversation(st.session_state.conversation_id)
 
 
 
