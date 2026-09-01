@@ -41,9 +41,6 @@ def api(method: str, path: str, **kwargs):
             "user_id 는 `3fa85f64-5717-4562-b3fc-2c963f66afa6` 같은 UUID 여야 합니다."
         )
 
-    if response.status_code >= 400:
-        raise ApiError(f"요청이 실패했습니다 (상태 코드 {response.status_code}).")
-
     if response.status_code == 503:
         # 모델 호출이 실패한 경우다. 백엔드가 detail 에 원인을 담아서 보낸다.
         # 17일차에 가장 흔한 원인은 하루 요청 한도 초과(429)다.
@@ -56,6 +53,9 @@ def api(method: str, path: str, **kwargs):
                 "내일 다시 시도하거나 강사에게 알리세요."
             )
         raise ApiError(f"답변을 만들지 못했습니다. {detail}")  
+
+    if response.status_code >= 400:
+            raise ApiError(f"요청이 실패했습니다 (상태 코드 {response.status_code}).")
 
     return response.json() if response.content else None 
 
