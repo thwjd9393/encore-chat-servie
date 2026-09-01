@@ -9,6 +9,26 @@ st.set_page_config(page_title=SERVICE_NAME)
 st.session_state.setdefault("user_id", "")
 st.session_state.setdefault("conversation_id", None)
 
+# 버튼으로 보낼 질문을 잠시 담아두는 곳. 버튼 안에서 바로 보내면
+# 화면이 다시 그려지는 도중이라 결과가 화면에 안 나타난다.
+st.session_state.setdefault("pending_question", None)
+
+EXAMPLE_QUESTIONS = [
+    "면접을 시작해 주세요.",
+    "1분 자기소개를 해보겠습니다.",
+    "제 이력서에서 가장 많이 받을 질문이 뭘까요?",
+]
+
+
+@st.cache_data(ttl=300)
+def load_options() -> dict:
+    """선택지는 백엔드에서 받아온다.
+
+    화면에 목록을 직접 적어두면 백엔드의 표와 두 곳에서 관리하게 된다.
+    한쪽에 톤을 추가하고 다른 쪽을 잊으면, 버튼은 있는데 아무 효과가 없다.
+    """
+    return api("GET", "/chat/options")
+
 
 def render_sidebar() -> None:
 
@@ -66,14 +86,41 @@ def render_sidebar() -> None:
             st.session_state.conversation_id = created["id"]
             st.rerun()
 
-            
 
+        #면접관과 톤 길이 설정하는 라디오 버튼
+        st.divider()
+        st.subheader("면접관 설정")
+        # 이 두 값이 곧 프롬프트의 두 문장이 된다.
+        st.radio("말투", options["tones"], key="tone", horizontal=True)
+        st.radio("답변 길이", options["lengths"], key="length", horizontal=True)
+        st.caption("고른 값은 다음 질문부터 적용됩니다. 이미 받은 답변은 바뀌지 않습니다.")
+
+            
 def render_empty(message: str, hint: str) -> None:
     """빈 화면은 "없다"가 아니라 "다음에 무엇을 하면 되는지"를 말해야 한다."""
     st.info(message)
     st.caption(hint)
 
+# 쳇을 날리는 애
+def ask(conversation_id: str, question: str) -> None:
+    """질문을 보내고 답을 받는다. 실패하면 화면에 이유를 남긴다."""
+    try:
+        with st.spinner("면접관이 답변을 준비하는 중..."):
+            api(
+                "POST",
+                f"/conversations/{conversation_id}/chat",
+                json={
+                    "content": question,
+                    "tone": st.session_state.tone,
+                    "length": st.session_state.length,
+                },
+            )
+    except ApiError as error:
+        st.error(str(error))
+        return
+    st.rerun() #정상 처리 -> 화면 갱신
 
+## 메세지 입력하는 애
 def render_conversation(conversation_id: str) -> None:
     """가운데: 주고받은 내용과 입력칸."""
 
@@ -89,33 +136,72 @@ def render_conversation(conversation_id: str) -> None:
             "아직 주고받은 내용이 없습니다.",
             "아래 입력칸에 첫 답변을 적어보세요. 오늘은 저장만 되고, 면접관의 질문은 17일차에 붙입니다.",
         )
+        
+        #예시 질문 출력
+        render_examples(conversation_id)
 
     #메세지 목록 출력
     for message in messages:
         with st.chat_message(message["role"]):
             st.write(message["content"])
 
+
+    ##############################################################
+    ###########################################################3##
+
     #새로운 메세지 입력 위젯 출력
     if answer := st.chat_input("답변을 입력하세요"):
-        try:
-            #입력받은 메세지를 서버 엔드포인트에 전송
-            api(
-                "POST",
-                f"/conversations/{conversation_id}/messages",
-                json={"role": "user", "content": answer},
-            )
-        except ApiError as error:
-            st.error(str(error))
-            return
+
+        ask(conversation_id,answer)
+
+        # 기존에 db에 직접 넣어주던 api 주석 > ask()에서 질문 후 전송해주고있기때문에
+        # try:
+        #     #입력받은 메세지를 서버 엔드포인트에 전송
+        #     api(
+        #         "POST",
+        #         f"/conversations/{conversation_id}/messages",
+        #         json={"role": "user", "content": answer},
+        #     )
+        # except ApiError as error:
+        #     st.error(str(error))
+        #     return
 
         #화면 다시 그리기
         st.rerun()
 
 
+def render_examples(conversation_id: str) -> None:
+    """무엇을 물어야 할지 모르는 사람을 위한 출발점.
+
+    빈 입력칸만 놓아두면 대부분 아무것도 입력하지 않고 나간다.
+    """
+    st.caption("아래 질문 중 선택해 보세요")
+    columns = st.columns(len(EXAMPLE_QUESTIONS))
+    #zip : 두개의 값을 하나로 묶어주는 것
+    for column, question in zip(columns, EXAMPLE_QUESTIONS):
+        if column.button(question, use_container_width=True):
+            st.session_state.pending_question = question
+            st.rerun()
+
+
+# 브라우저 화면에 드로임
+#화면 구성에 필요한 환경정보 엔드포인트 호출
+try:
+    options = load_options()
+except ApiError as error:
+    st.title(SERVICE_NAME)
+    st.error(str(error))
+    st.stop()
+
+# 라디오 버튼의 초기값. 백엔드가 알려준 기본값을 쓴다.
+st.session_state.setdefault("tone", options["default_tone"])
+st.session_state.setdefault("length", options["default_length"])
+
 render_sidebar() ##렌더 잊지말기
 
 st.title(SERVICE_NAME)
-st.caption("직무를 정하고 면접 질문에 답하며 연습합니다. 오늘은 화면만 만듭니다.")
+st.caption("직무를 정하고 면접 질문에 답하며 연습합니다.")
+st.caption(f"말투 {st.session_state.tone} · 길이 {st.session_state.length}")
 
 if not st.session_state.user_id:
     render_empty(
