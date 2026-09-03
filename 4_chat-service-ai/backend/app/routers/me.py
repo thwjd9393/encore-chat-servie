@@ -25,17 +25,17 @@ me_router = APIRouter(prefix="/me", tags=["me"])
 def read_me(current_user: CurrentUser = Depends(get_current_user)):
     return {"id": current_user.id, "email": current_user.email}
 
-# @me_router.get("/conversations", response_model=list[ConversationOut])
-# def my_conversations(current_user: CurrentUser = Depends(get_current_user)):
-#     client = get_anon_client() #토큰 비교
-#     client.postgrest.auth(current_user.token)
-#     result = (
-#         client.table("conversations")
-#         .select("*")
-#         .order("created_at", desc=True)
-#         .execute()
-#     )
-#     return result.data
+@me_router.get("/conversations", response_model=list[ConversationOut])
+def my_conversations(current_user: CurrentUser = Depends(get_current_user)):
+    client = get_anon_client() #토큰 비교
+    client.postgrest.auth(current_user.token)
+    result = (
+        client.table("conversations")
+        .select("*")
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return result.data
 
 @me_router.post("/conversations", response_model=ConversationOut)
 def create_my_conversation(
