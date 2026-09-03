@@ -46,6 +46,15 @@ class ConversationOut(BaseModel):
     created_at: datetime
 
 
+class MyConversationCreate(BaseModel):
+    # 주의: user_id 를 받지 않는다. 토큰에서 꺼낸 값만 신뢰한다.
+    #      받으면 남의 명의로 대화를 만들 수 있다.
+    title: str | None = None
+
+class ConversationUpdate(BaseModel):
+    title: str
+
+
 # ── 메시지 ────────────────────────────────────────────────────────
 # 주의: role 은 Literal 로 값을 고정한다. str 로 두면 'robot' 같은 값이 그대로 통과한다.
 # TODO 6. MessageCreate — role(Literal), content(1자 이상)

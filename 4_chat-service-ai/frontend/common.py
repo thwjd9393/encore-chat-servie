@@ -5,6 +5,7 @@
 """
 
 import httpx
+import streamlit as st
 
 BACKEND_URL = "http://127.0.0.1:8000"
 
@@ -34,6 +35,15 @@ def api(method: str, path: str, **kwargs):
     except httpx.TimeoutException:
         raise ApiError("서버가 제때 응답하지 않았습니다. 잠시 후 다시 시도하세요.")
 
+    if response.status_code == 401:
+        # 토큰이 만료됐거나 잘못된 상태다. 토큰 수명은 60분이라
+        # 하루 수업 중에 반드시 한 번은 만난다.
+        # 주의: 이것을 빈 목록으로 처리하면 화면에 "대화가 없습니다" 가 뜬다.
+        #      사용자는 자기 기록이 사라진 줄 안다.
+        raise SessionExpired(
+            "로그인이 만료되었습니다. 기록은 그대로 있으니 다시 로그인해 주세요."
+        )
+
     if response.status_code == 422:
         # 상태 코드만 보여주면 무엇을 고쳐야 할지 알 수 없다.
         raise ApiError(
@@ -60,6 +70,14 @@ def api(method: str, path: str, **kwargs):
     return response.json() if response.content else None 
 
 
+class SessionExpired(ApiError):
+    """로그인이 풀린 상태.
+
+    ApiError 를 물려받는 것이 중요하다. 아직 처리를 안 붙인 화면에서도
+    최소한 오류로는 잡힌다. 그러나 화면 전체를 로그인으로 되돌려야 하는
+    상황이라 따로 알아볼 수 있게 이름을 나눠 둔다.
+    """
+
 #
 def conversation_label(conversation: dict) -> str:
     """목록에 보여줄 한 줄.
@@ -72,3 +90,6 @@ def conversation_label(conversation: dict) -> str:
     return f"{title} · {created} · {conversation['id'][:8]}"
 
 
+def auth_headers() -> dict:
+    """로그인 뒤 모든 요청에 붙이는 헤더."""
+    return {"Authorization": f"Bearer {st.session_state.access_token}"}
