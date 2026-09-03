@@ -2,11 +2,12 @@ import streamlit as st
 
 from common import (
     ApiError,
-    api,
-    conversation_label,
-    auth_headers,
     SERVICE_NAME,
     SessionExpired,
+    api,
+    auth_headers,
+    conversation_label,
+    stream_answer,
 )
 
 
@@ -69,6 +70,10 @@ st.session_state.setdefault("pending_question", None)
 # 세션이 풀린 이유를 다음 실행에서 보여주려고 남겨둔다.
 # 토큰만 지우고 끝내면 사용자는 자기가 왜 로그아웃됐는지 모른다.
 st.session_state.setdefault("expired_notice", None)
+
+######실시간으로 답 찍을 때 추가함
+# 답을 못 받은 질문. `다시 시도` 버튼이 이것을 쓴다.
+st.session_state.setdefault("failed_question", None)
 
 
 # ---------------------------------------------------------
@@ -138,6 +143,9 @@ def sign_out(notice: str | None = None) -> None:
 
     # 버튼으로 예약된 질문 제거
     st.session_state.pending_question = None
+
+    # 답을 못 받은 질문. 
+    st.session_state.failed_question = None
 
     # 세션 만료라면 이유를 저장한다.
     # 일반 로그아웃이면 notice=None
@@ -536,41 +544,75 @@ def render_empty(
 # ---------------------------------------------------------
 
 # 챗을 날리는 애
-def ask(
-    conversation_id: str,
-    question: str,
-) -> None:
-    """질문을 서버에 보내고 AI의 답변을 받는다.
+# 기존 -> 실시간 반응 전 - api 직접 불러서 사용
+# def ask(
+#     conversation_id: str,
+#     question: str,
+# ) -> None:
+#     """질문을 서버에 보내고 AI의 답변을 받는다.
 
-    여기서는 ApiError / SessionExpired를 잡지 않는다.
+#     여기서는 ApiError / SessionExpired를 잡지 않는다.
 
-    이유:
-    SessionExpired를 화면 최하단 main 영역에서
-    한 번에 처리하기 위해서다.
+#     이유:
+#     SessionExpired를 화면 최하단 main 영역에서
+#     한 번에 처리하기 위해서다.
 
-    각각의 API 호출에서 try/except를 작성하면
-    API 호출이 많아질수록 세션 만료 처리를
-    빼먹을 가능성이 커진다.
+#     각각의 API 호출에서 try/except를 작성하면
+#     API 호출이 많아질수록 세션 만료 처리를
+#     빼먹을 가능성이 커진다.
+#     """
+
+#     with st.spinner(
+#         "면접관이 답변을 준비하는 중..."
+#     ):
+
+#         api(
+#             "POST",
+#             f"/conversations/{conversation_id}/chat",
+
+#             json={
+#                 "content": question,
+#                 "tone": st.session_state.tone,
+#                 "length": st.session_state.length,
+#             },
+#         )
+
+#     # 정상 처리 -> 화면 갱신
+#     st.rerun()
+
+
+# stream_answer 함수 불러서 처리로 변경
+def ask(conversation_id: str, question: str) -> None:
+    """질문을 보내고 답이 흘러나오는 것을 보여준다.
+
+    19일차까지는 다 만들어진 뒤에 화면을 새로 그렸다. 몇 초 동안 아무 일도
+    일어나지 않는 것처럼 보였다. 오늘은 글자가 나오는 대로 보여준다.
     """
+    with st.chat_message("user"):
+        st.write(question)
 
-    with st.spinner(
-        "면접관이 답변을 준비하는 중..."
-    ):
+    with st.chat_message("assistant"):
+        try:
+            # st.write_stream 은 조각을 받아 화면에 이어 붙이고, 커서도 그려준다.
+            st.write_stream(
+                stream_answer(
+                    f"/conversations/{conversation_id}/chat",
+                    {
+                        "content": question,
+                        "tone": st.session_state.tone,
+                        "length": st.session_state.length,
+                    },
+                )
+            )
+        except ApiError as error:
+            # 실패한 질문을 기억해 둔다. 다시 시도 버튼이 이것을 쓴다.
+            # 사용자가 긴 답변을 다시 타이핑하게 만들면 안 된다.
+            st.session_state.failed_question = question
+            st.error(str(error))
+            return
 
-        api(
-            "POST",
-            f"/conversations/{conversation_id}/chat",
-
-            json={
-                "content": question,
-                "tone": st.session_state.tone,
-                "length": st.session_state.length,
-            },
-        )
-
-    # 정상 처리 -> 화면 갱신
+    st.session_state.failed_question = None
     st.rerun()
-
 
 # ---------------------------------------------------------
 # 예시 질문

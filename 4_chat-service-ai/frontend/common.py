@@ -7,6 +7,8 @@
 import httpx
 import streamlit as st
 
+import json
+
 BACKEND_URL = "http://127.0.0.1:8000"
 
 # httpx 기본 타임아웃은 5초다. 배포한 서버는 깨어나는 데 그보다 오래 걸리기도 한다.
@@ -19,6 +21,19 @@ class ApiError(Exception):
 
     httpx 가 던지는 예외 이름(ConnectError 등)이 아니라 무엇을 하면 되는지가 담긴 문장으로 바꿔서 돌려준다.
     """
+
+class SessionExpired(ApiError):
+    """로그인이 풀린 상태.
+
+    ApiError 를 물려받는 것이 중요하다. 아직 처리를 안 붙인 화면에서도
+    최소한 오류로는 잡힌다. 그러나 화면 전체를 로그인으로 되돌려야 하는
+    상황이라 따로 알아볼 수 있게 이름을 나눠 둔다.
+    """
+
+def auth_headers() -> dict:
+    """로그인 뒤 모든 요청에 붙이는 헤더."""
+    return {"Authorization": f"Bearer {st.session_state.access_token}"}
+
 
 def api(method: str, path: str, **kwargs):
     ## ** : 딕셔너리 같은 거 받아주는 넘
@@ -70,13 +85,36 @@ def api(method: str, path: str, **kwargs):
     return response.json() if response.content else None 
 
 
-class SessionExpired(ApiError):
-    """로그인이 풀린 상태.
+def stream_answer(path: str, payload: dict | None = None):
+    """SSE 응답을 글자 조각으로 하나씩 내어준다.
 
-    ApiError 를 물려받는 것이 중요하다. 아직 처리를 안 붙인 화면에서도
-    최소한 오류로는 잡힌다. 그러나 화면 전체를 로그인으로 되돌려야 하는
-    상황이라 따로 알아볼 수 있게 이름을 나눠 둔다.
+    api() 와 나눠 둔 이유는 반환하는 것이 다르기 때문이다.
+    api() 는 완성된 JSON 을 주고, 이 함수는 아직 안 끝난 응답을 조금씩 준다.
+
+    스트림이 시작된 뒤의 실패는 상태 코드로 알 수 없다. 헤더가 이미 나갔기 때문이다.
+    그래서 서버가 error 이벤트로 보내고, 여기서 ApiError 로 바꿔 올린다.
     """
+    try:
+        with httpx.stream(
+            "POST", f"{BACKEND_URL}{path}", json=payload or {}, timeout=HTTP_TIMEOUT
+        ) as response:
+            if response.status_code >= 400:
+                response.read()
+                raise ApiError(f"요청이 실패했습니다 (상태 코드 {response.status_code}).")
+
+            for line in response.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                event = json.loads(line.removeprefix("data: "))
+                if "error" in event:
+                    raise ApiError(f"답변을 만들지 못했습니다. {event['error']}")
+                if event.get("done"):
+                    return
+                yield event["text"]
+    except httpx.ConnectError:
+        raise ApiError("백엔드 서버에 연결할 수 없습니다.")
+    except httpx.TimeoutException:
+        raise ApiError("응답이 너무 오래 걸려 중단했습니다. 다시 시도해 보세요.")
 
 #
 def conversation_label(conversation: dict) -> str:
@@ -89,7 +127,3 @@ def conversation_label(conversation: dict) -> str:
     created = conversation["created_at"][:16].replace("T", " ")
     return f"{title} · {created} · {conversation['id'][:8]}"
 
-
-def auth_headers() -> dict:
-    """로그인 뒤 모든 요청에 붙이는 헤더."""
-    return {"Authorization": f"Bearer {st.session_state.access_token}"}
