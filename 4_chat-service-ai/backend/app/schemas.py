@@ -116,14 +116,14 @@ class ChatRequest(BaseModel):
 
 
 
-# ── 피드백 클래스 ────────────────────────────────────────────────────────
+# ── 다시 생성 만들기 ────────────────────────────────────────────────────────
 class RegenerateRequest(BaseModel):
     # 주의: ChatRequest 를 재사용하면 안 된다. 거기에는 content 가 필수라서,
     #      질문을 다시 보내지 않는 이 요청은 422 로 거부당한다.
     tone: str | None = None
     length: str | None = None
 
-
+# ── 피드백 클래스 ────────────────────────────────────────────────────────
 class FeedbackRequest(BaseModel):
     message_id: UUID
     # None 이면 취소다. 한 번 누른 것을 되돌릴 수 있어야 한다.
